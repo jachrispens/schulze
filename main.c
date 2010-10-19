@@ -5,6 +5,7 @@
 #include <string.h>
 #include <errno.h>
 
+void print_usage_and_die(char *program_name);
 bool determine_winners(FILE *rankings, int candidate_count, bool winners[candidate_count]);
 int max(int a, int b);
 int min(int a, int b);
@@ -13,54 +14,83 @@ void tally(int candidate_count, int votes[candidate_count][candidate_count],
 	   int candidate_order[candidate_count], int rankings[candidate_count]);
 void print_graph_matrix(int n, int graph[n][n]);
 void print_array(int n, int array[n]);
-char **get_lines(FILE *file, int *count);
+
+enum {MAX_CANDIDATES = 256};
 
 int main(int argc, char **argv)
 {
-  if (argc != 3) {
-    fprintf(stderr, "usage: %s <candidates file> <votes file>\n", argv[0]);
-    return 1;
+
+  if (argc == 0) {
+    fputs("usage: -c <candidate count> [ranking filename]\n", stderr);
+    exit(1);
   }
 
-  FILE *candidates = fopen(argv[1], "rb");
-  if (candidates == NULL) {
-    fprintf(stderr, "ERROR: could not open candidate file, %s!\n", argv[1]);
-    return 1;
-  }
+  char *program_name = *argv++;
+  int count = 0;
+  char *ranking_filename = NULL;
 
-  FILE *votes = fopen(argv[2], "rb");
-  if (votes == NULL) {
-    fprintf(stderr, "ERROR: could not open votes file, %s!\n", argv[2]);
-    return 1;
-  }
-
-  int count;
-  char **lines = get_lines(candidates, &count);
-
-  if (count > 0) {
-    bool winners[count];
-    if (determine_winners(votes, count, winners)) {
-      for (int index = 0; index < count; index++) {
-	if (winners[index] == true) {
-	  printf("winner: %s\n", lines[index + 1]);
-	}
+  for ( ; *argv != NULL; argv++) {
+    if (strcmp(*argv, "-c") == 0) {
+      if (*++argv == NULL) {
+	print_usage_and_die(program_name);
       }
+      char *end = NULL;
+      long int number = strtol(*argv, &end, 10);
+      if (end[0] != '\0' || *argv == end) {
+	print_usage_and_die(program_name);
+      }
+      if (number < 1 || number > MAX_CANDIDATES) {
+	fprintf(stderr, "candidate count of %ld is out of range!\n", number);
+	print_usage_and_die(program_name);
+      }
+      count = number;
+    } else {
+      if (ranking_filename != NULL) {
+	print_usage_and_die(program_name);
+      }
+      ranking_filename = *argv;
+    }
+  }
+
+  if (count == 0) {
+    fputs("must provide candidate count with -c\n", stderr);
+    print_usage_and_die(program_name);
+  }
+
+  FILE *votes = NULL;
+  if (ranking_filename != NULL) {
+    votes = fopen(ranking_filename, "rb");
+    if (votes == NULL) {
+      fprintf(stderr, "ERROR: could not open votes file, %s!\n", ranking_filename);
+      return 1;
     }
   } else {
-    fputs("ERROR: no candidates\n", stderr);
+    votes = stdin;
   }
 
-  if (lines) {
-    free(*lines);
-    free(lines);
+  bool winners[count];
+  if (determine_winners(votes, count, winners)) {
+    for (int index = 0; index < count; index++) {
+      if (winners[index] == true) {
+	printf("winner: candidate %d\n", index + 1);
+      }
+    }
   }
 
-  fclose(candidates);
   fclose(votes);
 
   return 0;
 }
 
+/*
+ * print_usage_and_die does just that.
+ */
+void print_usage_and_die(char *program_name)
+{
+  fprintf(stderr, "usage: %s -c <candidate_count> [ranking filename]\n", program_name);
+  exit(1);
+}
+	  
 
 
 /*
@@ -427,142 +457,3 @@ void print_array(int n, int array[n])
   puts("");
 }
 
-/*
- * get_lines reads all lines in a file; file is assumed to be open in
- * binary mode and must also support SEEK_END in fseek.  If line_count
- * is non null, it is set to the number of lines found.  The pointers
- * returned by get_lines are malloc'ed on the callers behalf; the
- * caller assumes responsibility for calling free().  There are two
- * buffers allocated; one for the vector and one for the actual lines;
- * the pointer to the vector buffer is returned by this function.  The
- * vector will contain count + 1 elements followed by a NULL.  The
- * first element is a pointer to the start of the data buffer and
- * should be free()'ed. The following count elements are pointers to
- * the individual lines, which are each NULL terminated.
- *
- * Carriage returns and line feeds are treated as line separators, as
- * well as null characters.
- *
- * If there is an error, NULL will be returned and count will be set
- * to a value less than 0.  If there are no lines to read (the file is
- * empty), NULL will be returned and count set to 0.
- *
- * The returned vector DOES NOT include empty lines.
- */
-
-char **get_lines(FILE *file, int *count)
-{
-  if (fseek(file, 0, SEEK_END)) {
-    fputs("file does not support SEEK_END!\n", stderr);
-    goto error_return;
-  }
-
-  long size = ftell(file);
-  if (size == -1) {
-    fprintf(stderr, "could not determine size: %s\n", strerror(errno));
-    goto error_return;
-  }
-
-  if (size == 0) {
-    if (count) {
-      *count = 0;
-    }
-    return NULL;
-  }
-
-  if (fseek(file, 0, SEEK_SET)) {
-    fputs("seek failed!\n", stderr);
-    goto error_return;
-  }
-
-  char *file_buffer = malloc(size + 1);
-  if (file_buffer == NULL) {
-    fputs("could not allocate memory!\n", stderr);
-    goto error_return;
-  }
-
-  size_t read = fread(file_buffer, sizeof(char), size, file);
-  if (read != (unsigned long)size) {
-    fprintf(stderr, "did not read entire file! only read %zd characters\n", read);
-    free(file_buffer);
-    goto error_return;
-  }
-  file_buffer[read] = '\0';
-
-  unsigned line_count = 0;
-  char *current = file_buffer;
-  char *end = file_buffer + size;
-  bool in_line = false;
-  while (current <= end) {
-    switch (*current) {
-    case '\r':
-    case '\n':
-    case '\0':
-      if (in_line) {
-	in_line = false;
-	line_count += 1;
-      }
-      break;
-
-    default:
-      in_line = true;
-      break;
-    }
-    current++;
-  }
-
-  if (line_count == 0) {
-    if (count) {
-      *count = 0;
-    }
-    free(file_buffer);
-    return NULL;
-  }
-
-  char **lines = malloc(sizeof(char*) * (line_count + 2));
-  if (lines == NULL) {
-    fputs("could not allocate memory!\n", stderr);
-    free(file_buffer);
-    goto error_return;
-  }
-
-  char **current_line = lines;
-  *current_line++ = file_buffer;
-
-  current = file_buffer;
-  in_line = false;
-  while (current <= end) {
-    switch (*current) {
-    case '\r':
-    case '\n':
-    case '\0':
-      if (in_line) {
-	in_line = false;
-	*current = '\0';
-      }
-      break;
-    default:
-      if (!in_line) {
-	in_line = true;
-	*current_line++ = current;
-      }
-      break;
-    }
-    current++;
-  }
-
-  *current_line = NULL;
-
-  if (count) {
-    *count = line_count;
-  }
-
-  return lines;
-       
- error_return:
-  if (count) {
-    *count = -1;
-  }
-  return NULL;
-
-}
