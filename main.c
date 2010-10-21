@@ -5,29 +5,32 @@
 #include <string.h>
 #include <errno.h>
 
+enum {MAX_CANDIDATES = 256};
+enum candidate_status {UNRANKED, WINNER, IGNORE};
+
 void print_usage_and_die(char *program_name);
-bool determine_winners(FILE *rankings, int candidate_count, bool winners[candidate_count]);
+bool determine_winners(int candidate_count, int votes[candidate_count][candidate_count], enum candidate_status statuses[candidate_count]);
 int max(int a, int b);
 int min(int a, int b);
 bool parse_votes(FILE *file, int candidate_count, int votes[candidate_count][candidate_count]);
 void tally(int candidate_count, int votes[candidate_count][candidate_count],
 	   int candidate_order[candidate_count], int rankings[candidate_count]);
 void print_graph_matrix(int n, int graph[n][n]);
-void print_array(int n, int array[n]);
 
-enum {MAX_CANDIDATES = 256};
+const char *const usage = "-c <candidate count> [-r] [ranking filename]";
 
 int main(int argc, char **argv)
 {
 
   if (argc == 0) {
-    fputs("usage: -c <candidate count> [ranking filename]\n", stderr);
+    fprintf(stderr, "usage: %s\n", usage);
     exit(1);
   }
 
   char *program_name = *argv++;
   int count = 0;
   char *ranking_filename = NULL;
+  bool rank_all_alternatives = false;
 
   for ( ; *argv != NULL; argv++) {
     if (strcmp(*argv, "-c") == 0) {
@@ -44,6 +47,8 @@ int main(int argc, char **argv)
 	print_usage_and_die(program_name);
       }
       count = number;
+    } else if (strcmp(*argv, "-r") == 0) {
+      rank_all_alternatives = true;
     } else {
       if (ranking_filename != NULL) {
 	print_usage_and_die(program_name);
@@ -57,27 +62,53 @@ int main(int argc, char **argv)
     print_usage_and_die(program_name);
   }
 
-  FILE *votes = NULL;
+  FILE *ranking_file = NULL;
   if (ranking_filename != NULL) {
-    votes = fopen(ranking_filename, "rb");
-    if (votes == NULL) {
+    ranking_file = fopen(ranking_filename, "rb");
+    if (ranking_file == NULL) {
       fprintf(stderr, "ERROR: could not open votes file, %s!\n", ranking_filename);
       return 1;
     }
   } else {
-    votes = stdin;
+    ranking_file = stdin;
   }
 
-  bool winners[count];
-  if (determine_winners(votes, count, winners)) {
-    for (int index = 0; index < count; index++) {
-      if (winners[index] == true) {
-	printf("winner: candidate %d\n", index + 1);
-      }
+  int votes[count][count];
+  if (!parse_votes(ranking_file, count, votes)) {
+    return 1;
+  }
+
+  puts("tallied votes:");
+  print_graph_matrix(count, votes);
+
+
+  enum candidate_status statuses[count];
+  for (int index = 0; index < count; index++) {
+    statuses[index] = UNRANKED;
+  }
+
+  determine_winners(count, votes, statuses);
+  for (int index = 0; index < count; index++) {
+    if (statuses[index] == WINNER) {
+      printf("winner: candidate %d\n", index + 1);
+      statuses[index] = IGNORE;
     }
   }
 
-  fclose(votes);
+  if (rank_all_alternatives) {
+    int place = 2;
+    while (determine_winners(count, votes, statuses)) {
+      for (int index = 0; index < count; index++) {
+	if (statuses[index] == WINNER) {
+	  printf("%d: candidate %d\n", place, index + 1);
+	  statuses[index] = IGNORE;
+	}
+      }
+      place++;
+    }
+  }
+
+  fclose(ranking_file);
 
   return 0;
 }
@@ -87,7 +118,7 @@ int main(int argc, char **argv)
  */
 void print_usage_and_die(char *program_name)
 {
-  fprintf(stderr, "usage: %s -c <candidate_count> [ranking filename]\n", program_name);
+  fprintf(stderr, "usage: %s %s\n", program_name, usage);
   exit(1);
 }
 	  
@@ -95,28 +126,47 @@ void print_usage_and_die(char *program_name)
 
 /*
  * detemine_winners reads the ranking file and finds the winning
- * candidates (there may be more than one) by Schulze's method).  True
- * is returned on success; false on failure.
+ * candidates (there may be more than one) by Schulze's method).  Only
+ * candidates with a status of UNRANKED in the statuses array will be
+ * ranked.
  */
-bool determine_winners(FILE *rankings, int candidate_count, bool winners[candidate_count])
+bool determine_winners(int candidate_count, int votes[candidate_count][candidate_count], enum candidate_status statuses[candidate_count])
 {
-  int graph[candidate_count][candidate_count];
-
-  for (int row = 0; row < candidate_count; row++) {
-    for (int column = 0; column < candidate_count; column++) {
-      graph[row][column] = 0;
+  /* ranked count tracks how many candidates were ranked in this round */
+  int ranked_count = 0;
+  for (int index = 0; index < candidate_count; index++) {
+    if (statuses[index] == UNRANKED) {
+      ranked_count++;
     }
-  } 
+  }
 
-  if (!parse_votes(rankings, candidate_count, graph)) {
+  if (ranked_count == 0) {
     return false;
   }
-  puts("tallied votes:");
-  print_graph_matrix(candidate_count, graph);
+
+  /* stores the path information for this round */
+  int graph[ranked_count][ranked_count];
+
+  /* initialize the graph; the input rows and columns are indexes into
+     the votes matrix.  The output rows and columns are indexes into
+     the graphs matrix. */
+  for (int input_row = 0, output_row = 0; input_row < candidate_count; input_row++) {
+    if (statuses[input_row] != UNRANKED) {
+      continue;
+    }
+    for (int input_column = 0, output_column = 0; input_column < candidate_count; input_column++) {
+      if (statuses[input_column] != UNRANKED) {
+	continue;
+      }
+      graph[output_row][output_column] = votes[input_row][input_column];
+      output_column++;
+    }
+    output_row++;
+  }
 
   /* find the pairwise victors using the number of winner votes as the
      strength */
-  for (int row = 0; row < candidate_count; row++) {
+  for (int row = 0; row < ranked_count; row++) {
     for (int column = 0; column < row; column++) {
       int support_for = graph[row][column];
       int opposition_against = graph[column][row];
@@ -131,10 +181,10 @@ bool determine_winners(FILE *rankings, int candidate_count, bool winners[candida
   }
 
   /* find the strongest paths */
-  for (int intermediary = 0; intermediary < candidate_count; intermediary++) {
-    for (int row = 0; row < candidate_count; row++) {
+  for (int intermediary = 0; intermediary < ranked_count; intermediary++) {
+    for (int row = 0; row < ranked_count; row++) {
       if (intermediary != row) {
-	for (int column = 0; column < candidate_count; column++) {
+	for (int column = 0; column < ranked_count; column++) {
 	  if (intermediary != column && row != column) {
 	    graph[row][column] = max(graph[row][column], 
 				     min(graph[row][intermediary],
@@ -144,22 +194,26 @@ bool determine_winners(FILE *rankings, int candidate_count, bool winners[candida
       }
     }
   }
-  puts("strongest paths:");
-  print_graph_matrix(candidate_count, graph);
   
-  /* find the winners */
-  for (int row = 0; row < candidate_count; row++) {
-    winners[row] = true;
-    for (int column = 0; column < candidate_count; column++) {
-      if (row != column) {
-	if (graph[column][row] > graph[row][column]) {
-	  winners[row] = false;
+  /* find the winners.  The senses of the input and outputs are
+     reversed from above; input rows and columns are indexes into the
+     graph matrix, output_row is an index into the statuses array */
+  for (int input_row = 0, output_row = 0; input_row < ranked_count; input_row++) {
+    while (statuses[output_row] != UNRANKED) {
+      output_row++;
+    }
+    statuses[output_row] = WINNER;
+    for (int input_column = 0; input_column < ranked_count; input_column++) {
+      if (input_row != input_column) {
+	if (graph[input_column][input_row] > graph[input_row][input_column]) {
+	  statuses[output_row] = UNRANKED;
 	}
       }
     }
+    output_row++;
   }
 
-  return true; 
+  return true;
 }
 
 /* 
@@ -187,6 +241,13 @@ inline int min(int a, int b) {
  */
 bool parse_votes(FILE *file, int candidate_count, int votes[candidate_count][candidate_count])
 {
+  /* initialize the array */
+  for (int row = 0; row < candidate_count; row++) {
+    for (int column = 0; column < candidate_count; column++) {
+      votes[row][column] = 0;
+    }
+  } 
+
   /* current_character */
   int c;
 
@@ -445,14 +506,6 @@ void print_graph_matrix(int n, int graph[n][n])
       printf("%5d ", graph[row][column]);
     }
     puts("");
-  }
-  puts("");
-}
-
-void print_array(int n, int array[n])
-{
-  for (int index = 0; index < n; index++) {
-    printf("%4d ", array[index]);
   }
   puts("");
 }
