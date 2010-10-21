@@ -17,7 +17,7 @@ void tally(int candidate_count, int votes[candidate_count][candidate_count],
 	   int candidate_order[candidate_count], int rankings[candidate_count]);
 void print_graph_matrix(int n, int graph[n][n]);
 
-const char *const usage = "-c <candidate count> [-r] [ranking filename]";
+const char *const usage = "-c <candidate count [1,256]> [-r] [ranking filename]";
 
 int main(int argc, char **argv)
 {
@@ -43,7 +43,7 @@ int main(int argc, char **argv)
 	print_usage_and_die(program_name);
       }
       if (number < 1 || number > MAX_CANDIDATES) {
-	fprintf(stderr, "candidate count of %ld is out of range!\n", number);
+	fprintf(stderr, "candidate count of %ld is out of range [1,256]!\n", number);
 	print_usage_and_die(program_name);
       }
       count = number;
