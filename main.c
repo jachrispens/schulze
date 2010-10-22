@@ -237,8 +237,7 @@ inline int min(int a, int b) {
  * expressed by the following regular expression: (\r|\n)*(
  * |\t)*[0-9]+( \t)*((>|=)( |\t)*[0-9]+)*( \t)*(\r|\n).  The parsing is
  * implemented by a state machine, which is hopefully obvious given
- * the RE.  parse_votes returns 0 on success and a negative value on
- * failure.
+ * the RE.  parse_votes returns true on success and false on error.
  */
 bool parse_votes(FILE *file, int candidate_count, int votes[candidate_count][candidate_count])
 {
@@ -438,7 +437,7 @@ bool parse_votes(FILE *file, int candidate_count, int votes[candidate_count][can
       }
       
     default:
-      fputs("ERROR: interal parser error; unrecognized state\n", stderr);
+      fputs("ERROR: internal parser error; unrecognized state\n", stderr);
       return false;
     }
   }
@@ -447,7 +446,7 @@ bool parse_votes(FILE *file, int candidate_count, int votes[candidate_count][can
   if (c == EOF) {
     fputs("ERROR: premature end of input\n", stderr);
   } else if (isprint(c)) {
-    fprintf(stderr, "ERROR: unexpcted character in input: %c\n", c);
+    fprintf(stderr, "ERROR: unexpected character in input: %c\n", c);
   } else {
     fputs("ERROR: unexpected non-printable input\n", stderr);
   }
@@ -492,8 +491,8 @@ void tally(int candidate_count, int votes[candidate_count][candidate_count],
 }
 
 /* print_graph_matrix display as a basic table the contents of the
- * provided graph matrix.  Its output will be crap for large numbers
- * of candidates or large numbers of votes.
+ * provided graph matrix.  Its output will be crappily formated for
+ * large numbers of candidates or large numbers of votes.
  */
 void print_graph_matrix(int n, int graph[n][n]) 
 {
