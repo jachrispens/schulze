@@ -132,7 +132,7 @@ void print_usage_and_die(char *program_name)
  */
 bool determine_winners(int candidate_count, int votes[candidate_count][candidate_count], enum candidate_status statuses[candidate_count])
 {
-  /* unranked count tracks how many candidates were ranked in this round */
+  /* unranked count contains the number of initally UNRANKED candidates. */
   int unranked_count = 0;
   for (int index = 0; index < candidate_count; index++) {
     if (statuses[index] == UNRANKED) {
