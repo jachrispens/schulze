@@ -121,31 +121,32 @@ void print_usage_and_die(char *program_name)
   fprintf(stderr, "usage: %s %s\n", program_name, usage);
   exit(1);
 }
-	  
-
 
 /*
- * detemine_winners reads the ranking file and finds the winning
- * candidates (there may be more than one) by Schulze's method).  Only
- * candidates with a status of UNRANKED in the statuses array will be
- * ranked.
+ * detemine_winners finds the winning candidates among those that have
+ * a status of UNRANKED in the candidate statuses array.  It marks the
+ * winning candidates with a status of WINNER.
+ *
+ * True is returned if any previously UNRANKED candidates were marked
+ * as WINNERs.  False is returned if there are no UNRANKED candidates.
  */
 bool determine_winners(int candidate_count, int votes[candidate_count][candidate_count], enum candidate_status statuses[candidate_count])
 {
-  /* ranked count tracks how many candidates were ranked in this round */
-  int ranked_count = 0;
+  /* unranked count tracks how many candidates were ranked in this round */
+  int unranked_count = 0;
   for (int index = 0; index < candidate_count; index++) {
     if (statuses[index] == UNRANKED) {
-      ranked_count++;
+      unranked_count++;
     }
   }
 
-  if (ranked_count == 0) {
+  /* not much to do if all of the candidates have been ranked */
+  if (unranked_count == 0) {
     return false;
   }
 
   /* stores the path information for this round */
-  int graph[ranked_count][ranked_count];
+  int graph[unranked_count][unranked_count];
 
   /* initialize the graph; the input rows and columns are indexes into
      the votes matrix.  The output rows and columns are indexes into
@@ -166,7 +167,7 @@ bool determine_winners(int candidate_count, int votes[candidate_count][candidate
 
   /* find the pairwise victors using the number of winner votes as the
      strength */
-  for (int row = 0; row < ranked_count; row++) {
+  for (int row = 0; row < unranked_count; row++) {
     for (int column = 0; column < row; column++) {
       int support_for = graph[row][column];
       int opposition_against = graph[column][row];
@@ -181,10 +182,10 @@ bool determine_winners(int candidate_count, int votes[candidate_count][candidate
   }
 
   /* find the strongest paths */
-  for (int intermediary = 0; intermediary < ranked_count; intermediary++) {
-    for (int row = 0; row < ranked_count; row++) {
+  for (int intermediary = 0; intermediary < unranked_count; intermediary++) {
+    for (int row = 0; row < unranked_count; row++) {
       if (intermediary != row) {
-	for (int column = 0; column < ranked_count; column++) {
+	for (int column = 0; column < unranked_count; column++) {
 	  if (intermediary != column && row != column) {
 	    graph[row][column] = max(graph[row][column], 
 				     min(graph[row][intermediary],
@@ -198,12 +199,12 @@ bool determine_winners(int candidate_count, int votes[candidate_count][candidate
   /* find the winners.  The senses of the input and outputs are
      reversed from above; input rows and columns are indexes into the
      graph matrix, output_row is an index into the statuses array */
-  for (int input_row = 0, output_row = 0; input_row < ranked_count; input_row++) {
+  for (int input_row = 0, output_row = 0; input_row < unranked_count; input_row++) {
     while (statuses[output_row] != UNRANKED) {
       output_row++;
     }
     statuses[output_row] = WINNER;
-    for (int input_column = 0; input_column < ranked_count; input_column++) {
+    for (int input_column = 0; input_column < unranked_count; input_column++) {
       if (input_row != input_column) {
 	if (graph[input_column][input_row] > graph[input_row][input_column]) {
 	  statuses[output_row] = UNRANKED;
@@ -490,14 +491,17 @@ void tally(int candidate_count, int votes[candidate_count][candidate_count],
   }
 }
 
-
-
+/* print_graph_matrix display as a basic table the contents of the
+ * provided graph matrix.  Its output will be crap for large numbers
+ * of candidates or large numbers of votes.
+ */
 void print_graph_matrix(int n, int graph[n][n]) 
 {
-  printf("     ");
-  for (int i = 1; i <= n; i++) {
-    printf("%5d ", i);
-  }
+  printf("     "); 
+  for (int i = 1; i <= n; i++) { 
+    printf("%5d ", i); 
+  } 
+
   puts("");
 
   for (int row = 0; row < n; row++) {
