@@ -81,32 +81,44 @@ int main(int argc, char **argv)
   puts("tallied votes:");
   print_graph_matrix(count, votes);
 
-
   enum candidate_status statuses[count];
   for (int index = 0; index < count; index++) {
     statuses[index] = UNRANKED;
   }
 
   determine_winners(count, votes, statuses);
+  bool ties = false;
   for (int index = 0; index < count; index++) {
     if (statuses[index] == WINNER) {
-      printf("winner: candidate %d\n", index + 1);
+      if (ties) {
+	printf(" = ");
+      }
+      printf("%d", index + 1);
       statuses[index] = IGNORE;
+      ties = true;
     }
   }
 
   if (rank_all_alternatives) {
     int place = 2;
     while (determine_winners(count, votes, statuses)) {
+      printf(" > ");
+      ties = false;
       for (int index = 0; index < count; index++) {
 	if (statuses[index] == WINNER) {
-	  printf("%d: candidate %d\n", place, index + 1);
+	  if (ties) {
+	    printf(" = ");
+	  }
+	  printf("%d", index + 1);
 	  statuses[index] = IGNORE;
+	  ties = true;
 	}
       }
       place++;
     }
   }
+
+  puts("");
 
   fclose(ranking_file);
 
